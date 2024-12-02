@@ -4,9 +4,10 @@ Copyright: Southern Medical University
 
 Author: Water_bros Zhou
 
-Date: 2024-12-01
+Start Time: 2024-11-29 13:30
+Update Time: 2024-12-02 0:40
 
-Description: 2024年南方医科大学风标杯设计作品源码
+Description: 2024 南方医科大学·风标杯 大二组题目设计作品源码
 
 **************************************************/
 
@@ -14,12 +15,14 @@ Description: 2024年南方医科大学风标杯设计作品源码
 #include <TM1652.h>
 // #include <Flash.h> // Flash 读写的自定义库出问题了，暂时不用
 
-#define RELAY_PIN PA1    // 继电器引脚
-#define ADC_PIN PA2      // ADC引脚
-#define KEY_SET_PIN PA3  // 设置键引脚
-#define KEY_UP_PIN PA4   // 增加键引脚 与原理图不一致，注意
-#define KEY_DOWN_PIN PA5 // 减少键引脚 与原理图不一致，注意
-#define LED_PIN PA7      // 8段数码管引脚
+#define RELAY_PIN PA1       // 继电器引脚
+#define ADC_PIN PA2         // ADC引脚
+#define KEY_SET_PIN PA3     // 设置键引脚
+#define KEY_UP_PIN PA4      // 增加键引脚 与原理图不一致，注意
+#define KEY_DOWN_PIN PA5    // 减少键引脚 与原理图不一致，注意
+#define LED_PIN PA7         // 8段数码管引脚
+#define SERIAL_TXD_PIN PA9  // 串口引脚
+#define SERIAL_RXD_PIN PA10 // 串口引脚
 
 struct RelayStruct // 继电器结构体
 {
@@ -50,11 +53,14 @@ struct RelayStruct // 继电器结构体
 
 TM1652 led(LED_PIN); // 8段数码管对象
 
+HardwareSerial Serial(SERIAL_TXD_PIN, SERIAL_RXD_PIN); // 串口对象
+
 float voltage = 0;                                                  // 实时电压值
 int protectVoltage = 3000, hysteresisVoltage = 600, restoreVoltage; // 默认保护电压30V，滞回电压6V，恢复电压
 int setMode = 3;                                                    // 0:设置保护电压，1:设置滞回电压，2:保存退出
+int lastTime = 0;                                                   // 时间间隔获取的上一次毫秒数
 // u32 *voltageArray = (u32 *)malloc(2 * sizeof(u32));                 // 电压数组，用于存储在 Flash 中
-const char *textSET = "SET";                                        // 字母文本
+const char *textSET = "SET"; // 字母文本
 const char *textHLL = "HLL";
 const char *textYES = "YES";
 
@@ -62,17 +68,20 @@ void digitalLEDInit();                     // 数码管初始化
 void relayInit();                          // 继电器初始化
 void keyInit();                            // 按键初始化
 void ADCInit();                            // ADC初始化
+void serialInit();                         // 串口初始化
+int getInterval();                         // 获取时间间隔
 void displayDigits(int value, int dotPos); // 数码管数字显示
 void displayChar(const char *value);       // 数码管显示字符
 // void readVoltageData();                    // 读取 Flash 中的电压数据
 // void saveVoltageData();                    // 保存电压数据到 Flash
-void displayCurrentVoltage();              // 显示当前电压
-void displayVoltage(int v);                // 显示电压
-void keySetMode();                         // 设置模式
-void keySet();                             // 设置键功能
-void keyAdd();                             // 增加键功能
-void keyMinus();                           // 减少键功能
-void relayControl();                       // 继电器控制
+void displayCurrentVoltage(); // 显示当前电压
+void displayVoltage(int v);   // 显示电压
+void keySetMode();            // 设置模式
+void keySet();                // 设置键功能
+void keyAdd();                // 增加键功能
+void keyMinus();              // 减少键功能
+void relayControl();          // 继电器控制
+void debugPrint();            // 调试输出
 
 void digitalLEDInit()
 {
@@ -101,6 +110,19 @@ void keyInit()
 void ADCInit()
 {
   pinMode(ADC_PIN, INPUT_ANALOG);
+}
+
+void serialInit()
+{
+  Serial.begin(115200);
+}
+
+int getInterval() // 获取时间间隔，但是目前还没用上，未来可能用来降低串口输出频率
+{
+  int now = millis();
+  int interval = now - lastTime;
+  lastTime = now;
+  return interval;
 }
 
 void displayDigits(int digit, int dotPos)
@@ -163,6 +185,7 @@ void displayCurrentVoltage()
     delay(50);
     readVoltage();
     displayVoltage((int)voltage);
+    debugPrint();
   }
 }
 
@@ -256,6 +279,20 @@ void relayControl()
     relay.on();
   }
 }
+
+void debugPrint()
+{
+  Serial.print("ProtectVoltage: ");
+  Serial.print((float)protectVoltage / 10.0);
+  Serial.println("V");
+  Serial.print("HysteresisVoltage: ");
+  Serial.print((float)hysteresisVoltage / 10.0);
+  Serial.println("V");
+  Serial.print("Voltage: ");
+  Serial.print((float)voltage / 10.0);
+  Serial.println("V");
+  Serial.println("===============");
+};
 
 void setup()
 {
