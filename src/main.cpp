@@ -2,12 +2,15 @@
 
 Copyright: Southern Medical University
 
-Author: Water_bros Zhou
+Author: Water_bros Zhou & MH
 
 Start Time: 2024-11-29 13:30
-Update Time: 2024-12-02 0:40
+Update Time: 2024-12-07 13:00
 
 Description: 2024 南方医科大学·风标杯 大二组题目设计作品源码
+
+Thanks for using this code!
+Thanks for your support!
 
 **************************************************/
 
@@ -53,31 +56,41 @@ struct RelayStruct // 继电器结构体
 
 TM1652 led(LED_PIN); // 8段数码管对象
 
-HardwareSerial Serial(SERIAL_TXD_PIN, SERIAL_RXD_PIN); // 串口对象
+HardwareSerial Serial1(SERIAL_TXD_PIN, SERIAL_RXD_PIN); // 串口对象
 
-float voltage = 0;                                                  // 实时电压值
-int protectVoltage = 3000, hysteresisVoltage = 600, restoreVoltage; // 默认保护电压30V，滞回电压6V，恢复电压
-int setMode = 3;                                                    // 0:设置保护电压，1:设置滞回电压，2:保存退出
-int lastTime = 0;                                                   // 时间间隔获取的上一次毫秒数
+double voltage = 0;                                               // 实时电压值
+int protectVoltage = 150, hysteresisVoltage = 50, restoreVoltage; // 默认保护电压15V，滞回电压5V，恢复电压
+int setMode = 3;                                                  // 0:设置保护电压，1:设置滞回电压，2:保存退出
+int lastTime = 0;                                                 // 时间间隔获取的上一次毫秒数
+int temp = 0, t = 0;
+
 // u32 *voltageArray = (u32 *)malloc(2 * sizeof(u32));                 // 电压数组，用于存储在 Flash 中
+
+bool addKeyEvent = false; // 按键事件标志
+bool minusKeyEvent = false;
+
 const char *textSET = "SET"; // 字母文本
 const char *textHLL = "HLL";
 const char *textYES = "YES";
 
-void digitalLEDInit();                     // 数码管初始化
-void relayInit();                          // 继电器初始化
-void keyInit();                            // 按键初始化
-void ADCInit();                            // ADC初始化
-void serialInit();                         // 串口初始化
-int getInterval();                         // 获取时间间隔
-void displayDigits(int value, int dotPos); // 数码管数字显示
-void displayChar(const char *value);       // 数码管显示字符
+void digitalLEDInit();               // 数码管初始化
+void relayInit();                    // 继电器初始化
+void keyInit();                      // 按键初始化
+void ADCInit();                      // ADC初始化
+void serialInit();                   // 串口初始化
+int getInterval();                   // 获取时间间隔
+void readVoltage();                  // 读取实时电压
+void displayChar(const char *value); // 数码管显示字符
+void displayVoltage(int v);          // 显示电压
+
 // void readVoltageData();                    // 读取 Flash 中的电压数据
 // void saveVoltageData();                    // 保存电压数据到 Flash
+
 void displayCurrentVoltage(); // 显示当前电压
-void displayVoltage(int v);   // 显示电压
-void keySetMode();            // 设置模式
+void modeLoop();              // 设置模式
 void keySet();                // 设置键功能
+void add();                   // 已废弃
+void minus();                 // 已废弃
 void keyAdd();                // 增加键功能
 void keyMinus();              // 减少键功能
 void relayControl();          // 继电器控制
@@ -86,7 +99,6 @@ void debugPrint();            // 调试输出
 void digitalLEDInit()
 {
   led.begin();
-  delay(100);
   displayCurrentVoltage();
 }
 
@@ -98,11 +110,11 @@ void relayInit()
 
 void keyInit()
 {
-  pinMode(KEY_SET_PIN, INPUT);
-  pinMode(KEY_UP_PIN, INPUT);
-  pinMode(KEY_DOWN_PIN, INPUT);
+  pinMode(KEY_SET_PIN, INPUT_PULLUP);
+  pinMode(KEY_UP_PIN, INPUT_PULLUP);
+  pinMode(KEY_DOWN_PIN, INPUT_PULLUP);
 
-  attachInterrupt(KEY_SET_PIN, keySetMode, FALLING); // 绑定对应按键中断操作调用的函数
+  attachInterrupt(KEY_SET_PIN, keySet, FALLING); // 绑定对应按键中断操作调用的函数
   attachInterrupt(KEY_UP_PIN, keyAdd, FALLING);
   attachInterrupt(KEY_DOWN_PIN, keyMinus, FALLING);
 }
@@ -114,10 +126,10 @@ void ADCInit()
 
 void serialInit()
 {
-  Serial.begin(115200);
+  Serial1.begin(115200);
 }
 
-int getInterval() // 获取时间间隔，但是目前还没用上，未来可能用来降低串口输出频率
+int getInterval() // 获取时间间隔
 {
   int now = millis();
   int interval = now - lastTime;
@@ -125,33 +137,33 @@ int getInterval() // 获取时间间隔，但是目前还没用上，未来可�
   return interval;
 }
 
-void displayDigits(int digit, int dotPos)
+void readVoltage()
 {
-  int d1, d2, d3;
-  d1 = digit / 100;
-  d2 = (digit % 100) / 10;
-  d3 = digit % 10;
-  led.clearDisplay();
-
-  switch (dotPos)
-  {
-  case 1:
-    led.setDisplayDigit(d1, 1);
-    led.setDisplayDigit(d2, 0);
-    led.setDisplayDigit(d3, 0);
-    break;
-  case 2:
-    led.setDisplayDigit(d1, 0);
-    led.setDisplayDigit(d2, 1);
-    led.setDisplayDigit(d3, 0);
-    break;
-  };
+  int adcValue = analogRead(ADC_PIN);
+  voltage = adcValue;
+  // 线性回归方程，实际作近似处理
+  // f(x) = 0.22772878710267208 * x + 2.968458045774822
+  voltage = (double)adcValue * 0.2277 + 2.9685; // ADC测量值转换为电压值
 }
 
 void displayChar(const char *value)
 {
   led.clearDisplay();
-  led.setDisplayToString(value);
+  led.sendAsciiChar(0, value[0], 0);
+  led.sendAsciiChar(1, value[1], 0);
+  led.sendAsciiChar(2, value[2], 0);
+}
+
+void displayVoltage(int v)
+{
+  int v1, v2, v3;
+  v1 = v / 100;
+  v2 = (v % 100) / 10;
+  v3 = v % 10;
+  led.clearDisplay();
+  led.setDisplayDigit(v1, 0);
+  led.setDisplayDigit(v2, 1, true);
+  led.setDisplayDigit(v3, 2);
 }
 
 // void readVoltageData()
@@ -172,98 +184,132 @@ void displayChar(const char *value)
 //   }
 // }
 
-void readVoltage()
-{
-  int adcValue = analogRead(ADC_PIN);
-  voltage = (float)adcValue / 4095.0 * 5460;
-}
-
 void displayCurrentVoltage()
 {
-  if (setMode == 3)
-  {
-    delay(50);
-    readVoltage();
-    displayVoltage((int)voltage);
-    debugPrint();
-  }
-}
-
-void displayVoltage(int v)
-{
-  delay(20);
-
-  if (v < 1000)
-  {
-    displayDigits(v, 1);
-  }
-  else
-  {
-    displayDigits(v / 10, 2);
-  }
-}
-
-void keySetMode()
-{
-  delay(20); // 延时去抖动
-  setMode = (setMode + 1) % 4;
-  keySet();
+  // led.setDisplayToString("SOS");
+  readVoltage();
+  displayVoltage((int)voltage);
+  delay(200);
+  // debugPrint();
 }
 
 void keySet()
 {
-  switch (setMode)
+  t++;
+  delay(100);
+  modeLoop();
+}
+
+void modeLoop()
+{
+  if (getInterval() > 50)
   {
-  case 0: // 显示并设置保护电压
-    displayChar(textSET);
-    delay(400);
-    displayVoltage(protectVoltage);
-    delay(400);
-    break;
-  case 1: // 显示并设置滞回电压
-    displayChar(textHLL);
-    delay(400);
-    displayVoltage(hysteresisVoltage);
-    delay(400);
-    break;
-  case 2: // 保存设置
-    displayChar(textYES);
-    delay(1000);
-    // saveVoltageData();
-    setMode++;
-    break;
-  default:
-    break;
+    if (t >= 1)
+    {
+      t = 0;
+      setMode++;
+    }
+    switch (setMode % 4)
+    {
+    case 0: // 显示并设置保护电压
+      protectVoltage += temp;
+      temp = 0;
+      displayChar(textSET);
+      delay(400);
+      displayVoltage(protectVoltage);
+      delay(400);
+      break;
+    case 1: // 显示并设置滞回电压
+      hysteresisVoltage += temp;
+      temp = 0;
+      displayChar(textHLL);
+      delay(400);
+      displayVoltage(hysteresisVoltage);
+      delay(400);
+      break;
+    case 2: // 保存设置
+      displayChar(textYES);
+      delay(800);
+      // saveVoltageData();
+      setMode++;
+    case 3:
+      displayCurrentVoltage();
+      // delay(200);
+      break;
+    default:
+      displayChar("ERR");
+      break;
+    }
   }
 }
 
 void keyAdd()
 {
-  switch (setMode)
+  if (getInterval() > 80)
   {
-  case 0:
-    protectVoltage++;
-    break;
-  case 1:
-    hysteresisVoltage++;
-    break;
-  default:
-    break;
+    temp++;
   }
 }
 
 void keyMinus()
 {
-  switch (setMode)
+  if (getInterval() > 80)
   {
-  case 0:
-    protectVoltage--;
-    break;
-  case 1:
-    hysteresisVoltage--;
-    break;
-  default:
-    break;
+    temp--;
+  }
+}
+
+void add() // 已废弃
+{
+  if (getInterval() > 50 && addKeyEvent)
+  {
+    switch (setMode)
+    {
+    case 0:
+      // protectVoltageTemp++;
+      // delay(100);
+      displayVoltage(protectVoltage);
+      break;
+    case 1:
+      // hysteresisVoltageTemp++;
+      // delay(100);
+      displayVoltage(hysteresisVoltage);
+      break;
+    }
+  }
+}
+
+void minus() // 已废弃
+{
+  if (getInterval() > 50 && minusKeyEvent)
+  {
+    switch (setMode)
+    {
+    case 0:
+      if (protectVoltage > 0)
+      {
+        protectVoltage--;
+      }
+      else
+      {
+        protectVoltage = 0;
+      }
+      // delay(100);
+      displayVoltage(protectVoltage);
+      break;
+    case 1:
+      if (hysteresisVoltage > 0)
+      {
+        hysteresisVoltage--;
+      }
+      else
+      {
+        hysteresisVoltage = 0;
+      }
+      // delay(100);
+      displayVoltage(hysteresisVoltage);
+      break;
+    }
   }
 }
 
@@ -282,16 +328,16 @@ void relayControl()
 
 void debugPrint()
 {
-  Serial.print("ProtectVoltage: ");
-  Serial.print((float)protectVoltage / 10.0);
-  Serial.println("V");
-  Serial.print("HysteresisVoltage: ");
-  Serial.print((float)hysteresisVoltage / 10.0);
-  Serial.println("V");
-  Serial.print("Voltage: ");
-  Serial.print((float)voltage / 10.0);
-  Serial.println("V");
-  Serial.println("===============");
+  Serial1.print("ProtectVoltage: ");
+  Serial1.print((float)protectVoltage / 10.0);
+  Serial1.println("V");
+  Serial1.print("HysteresisVoltage: ");
+  Serial1.print((float)hysteresisVoltage / 10.0);
+  Serial1.println("V");
+  Serial1.print("Voltage: ");
+  Serial1.print((float)voltage / 10.0);
+  Serial1.println("V");
+  Serial1.println("===============");
 };
 
 void setup()
@@ -300,13 +346,14 @@ void setup()
   ADCInit();
   keyInit();
   digitalLEDInit();
+  serialInit();
   // readVoltageData();
-  delay(20);
 }
 
 void loop()
 {
-  displayCurrentVoltage();
-  keySet();
+  modeLoop();
+  // keyAdd();
+  // keyMinus();
   relayControl();
 }
